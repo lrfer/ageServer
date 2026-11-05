@@ -107,6 +107,22 @@ than 4 KiB are left out of the communication log rather than base64-encoded into
 
 See the `[CustomFiles]` section of [`config.toml`](resources/config/config.toml).
 
+### Local mods (AoE IV: AE only)
+
+The mod browser endpoints of `api-dr.ageofempires.com` (`/api/v4/Mods/...`) are answered locally when the official
+service cannot be used instead of failing:
+
+- Without internet (no connectivity, or `Internet.Enabled = false`): always local.
+- With internet: each request goes to the official service first and its answer is relayed, so the official
+  launcher keeps subscribing to online mods. Only when the service rejects the client (`401`, e.g. the game was not
+  started by the official launcher) or cannot be reached is the request answered locally.
+
+The mods are the `.sga`/`.zip` files in `resources/mods/age4`; an optional `<name>.json` next to one overrides
+`modName`, `modDescription`, `modType`, `modTypeId`, `creatorName`, `modVersion` and `modTagNames`. The folder is
+rescanned on every request (only new or changed files are hashed), so files can be added, replaced or removed
+while the server runs. Every mod starts subscribed for every player; unsubscribing is kept in memory only.
+Publishing from the game is not supported.
+
 ### Cloud
 
 The game connects to a static cloud to download assets. The server is configured to replace the original calls to
