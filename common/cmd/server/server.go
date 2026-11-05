@@ -24,6 +24,7 @@ type Values struct {
 	AnnounceMulticast      string
 	AnnounceMulticastGroup string
 	StartBsIfMissing       string
+	SaveReplays            bool
 }
 
 func SingleFlagSet(version string, configPaths []string, runFn func(*pflag.FlagSet) (err error, exitCode int)) (values *Values, singleFs *cmd.SingleFlagSet) {
@@ -46,5 +47,6 @@ func SingleFlagSet(version string, configPaths []string, runFn func(*pflag.FlagS
 	flags.BoolVarP(&values.GeneratePlatformUserId, "generatePlatformUserId", "g", false, "Generate the Platform User Id based on the user's IP.")
 	flags.StringVar(&values.Id, "id", "", "Server instance ID to identify it.")
 	flags.StringVar(&values.StartBsIfMissing, "startBsIfMissing", "true", "Embedded battle server mode for all enabled games (true, false, required)")
+	flags.BoolVar(&values.SaveReplays, "saveReplays", false, "Keep AoE IV match replays on this server's disk (MatchReplays.Enabled). They are never uploaded anywhere else.")
 	return
 }

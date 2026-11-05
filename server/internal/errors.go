@@ -19,4 +19,5 @@ const (
 	ErrCustomFiles
 	ErrEmbeddedBattleServer
 	ErrBattleServerReplays
+	ErrMatchReplays
 )

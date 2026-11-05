@@ -12,11 +12,19 @@ import (
 )
 
 func GetTempCredentials(w http.ResponseWriter, r *http.Request) {
-	// TODO: What about age4 that can download replays?
 	fullKey := r.URL.Query().Get("key")
 	key := strings.TrimPrefix(fullKey, "/cloudfiles/")
+	key = strings.TrimPrefix(key, "/")
 	game := models.G(r)
+	if models.IsMatchReplayKey(key) {
+		matchReplayCredentials(w, game, fullKey, key)
+		return
+	}
 	cloudfiles := game.Resources().CloudFiles()
+	if cloudfiles.Credentials == nil {
+		i.JSON(&w, i.A{2, 0, "", fullKey})
+		return
+	}
 	cred := models.CreateCredential(cloudfiles.Credentials, &key)
 	t := cred.Expiry()
 	tUnix := t.Unix()
@@ -28,5 +36,22 @@ func GetTempCredentials(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	i.JSON(&w, i.A{2, t, "", fullKey})
+	i.JSON(&w, i.A{2, tUnix, "", fullKey})
+}
+
+// matchReplayCredentials issues a read token for a stored match replay. Keys
+// other than the exact ones this server hands out are never found.
+func matchReplayCredentials(w http.ResponseWriter, game models.Game, fullKey string, key string) {
+	store := game.MatchReplays()
+	matchID, kind, ok := models.ParseMatchReplayKey(key)
+	if !ok || store == nil || !store.Enabled() {
+		i.JSON(&w, i.A{2, 0, "", fullKey})
+		return
+	}
+	if _, exists := store.Stat(matchID, kind); !exists {
+		i.JSON(&w, i.A{2, 0, "", fullKey})
+		return
+	}
+	token, expiry := store.Grant(matchID, kind, false)
+	i.JSON(&w, i.A{0, expiry.Unix(), models.MatchReplaySAS(game.Title(), token, expiry, false), "/cloudfiles/" + models.MatchReplayKey(matchID, kind)})
 }

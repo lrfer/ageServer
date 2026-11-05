@@ -49,6 +49,10 @@ type Advertisement interface {
 	UnsafeGetAppBinaryChecksum() int32
 	UnsafeGetDataChecksum() int32
 	UnsafeGetMatchType() uint8
+	UnsafeGetMaxPlayers() uint8
+	UnsafeGetMapName() string
+	UnsafeGetOptions() string
+	UnsafeGetSlotInfo() string
 	UnsafeGetModName() string
 	UnsafeGetModVersion() string
 	UnsafeGetVersionFlags() uint32
@@ -234,6 +238,26 @@ func (adv *MainAdvertisement) UnsafeGetDataChecksum() int32 {
 // UnsafeGetMatchType requires advertisement read lock
 func (adv *MainAdvertisement) UnsafeGetMatchType() uint8 {
 	return adv.matchType
+}
+
+// UnsafeGetMaxPlayers requires advertisement read lock
+func (adv *MainAdvertisement) UnsafeGetMaxPlayers() uint8 {
+	return adv.maxPlayers
+}
+
+// UnsafeGetMapName requires advertisement read lock
+func (adv *MainAdvertisement) UnsafeGetMapName() string {
+	return adv.mapName
+}
+
+// UnsafeGetOptions requires advertisement read lock
+func (adv *MainAdvertisement) UnsafeGetOptions() string {
+	return adv.options
+}
+
+// UnsafeGetSlotInfo requires advertisement read lock
+func (adv *MainAdvertisement) UnsafeGetSlotInfo() string {
+	return adv.slotInfo
 }
 
 // UnsafeGetModName requires advertisement read lock

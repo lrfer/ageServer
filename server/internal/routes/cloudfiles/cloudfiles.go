@@ -2,6 +2,9 @@ package cloudfiles
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,6 +13,7 @@ import (
 
 	"github.com/luskaner/ageServer/common/game"
 	"github.com/luskaner/ageServer/server/internal"
+	"github.com/luskaner/ageServer/server/internal/logger"
 	"github.com/luskaner/ageServer/server/internal/models"
 )
 
@@ -32,9 +36,115 @@ func generateRequestId() string {
 	)
 }
 
+func md5Base64(hexSum string) string {
+	raw, err := hex.DecodeString(hexSum)
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+// handleMatchReplay emulates the blob storage for the match replays AoE IV
+// uploads after a match. The blobs are stored on this server's disk only
+// (models.MatchReplays); every request needs a token the server issued for that
+// exact blob, and uploads need a write token.
+func handleMatchReplay(w http.ResponseWriter, r *http.Request, key string) {
+	g := models.G(r)
+	store := g.MatchReplays()
+	matchID, kind, ok := models.ParseMatchReplayKey(key)
+	if !ok || store == nil || !store.Enabled() {
+		http.Error(w, "The specified blob does not exist.", http.StatusNotFound)
+		return
+	}
+	query := r.URL.Query()
+	if query.Get("comp") != "" {
+		// Block uploads (Put Block / Put Block List) are not emulated: storing a
+		// single block as the whole replay would corrupt it.
+		http.Error(w, "Block uploads are not supported.", http.StatusNotImplemented)
+		return
+	}
+	write := r.Method == http.MethodPut
+	if !store.Authorized(query.Get("sig"), matchID, kind, write) {
+		http.Error(w, "Server failed to authenticate the request.", http.StatusForbidden)
+		return
+	}
+
+	w.Header().Set("Server", "Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0")
+	w.Header().Set("x-ms-request-id", generateRequestId())
+	w.Header().Set("x-ms-version", models.AzureStorageVersion)
+	switch r.Method {
+	case http.MethodPut:
+		file, stored, err := store.Put(matchID, kind, http.MaxBytesReader(w, r.Body, store.MaxFileSize()))
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			switch {
+			case errors.Is(err, models.ErrFileTooLarge), errors.As(err, &tooLarge):
+				http.Error(w, "The request body is too large.", http.StatusRequestEntityTooLarge)
+			case errors.Is(err, models.ErrEmptyReplay):
+				http.Error(w, "The request body is empty.", http.StatusBadRequest)
+			default:
+				logger.Printf("cloudfiles: storing replay %s failed: %s\n", key, err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+			return
+		}
+		if stored {
+			logger.Printf("cloudfiles: stored match replay %s (%d bytes)\n", key, file.Length)
+		} else {
+			logger.Printf("cloudfiles: match replay %s already stored, upload discarded\n", key)
+		}
+		w.Header().Set("Content-MD5", md5Base64(file.MD5))
+		w.Header().Set("Last-Modified", file.ModTime.UTC().Format(http.TimeFormat))
+		w.Header().Set("ETag", fmt.Sprintf(`"0x%X"`, file.ModTime.UnixNano()))
+		w.Header().Set("x-ms-request-server-encrypted", "true")
+		w.Header().Set("Date", time.Now().UTC().Format(http.TimeFormat))
+		w.WriteHeader(http.StatusCreated)
+
+	case http.MethodGet, http.MethodHead:
+		file, f, ok := store.Open(matchID, kind)
+		if !ok {
+			http.Error(w, "The specified blob does not exist.", http.StatusNotFound)
+			return
+		}
+		defer func() { _ = f.Close() }()
+		created := file.ModTime.UTC().Format(http.TimeFormat)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		if r.Header.Get("Range") == "" {
+			// The MD5 describes the whole blob, never a range of it.
+			w.Header().Set("Content-MD5", md5Base64(file.MD5))
+		}
+		w.Header().Set("ETag", fmt.Sprintf(`"0x%X"`, file.ModTime.UnixNano()))
+		w.Header().Set("x-ms-meta-filename", kind.Filename())
+		w.Header().Set("x-ms-meta-ContentLength", strconv.FormatInt(file.Length, 10))
+		w.Header().Set("x-ms-creation-time", created)
+		w.Header().Set("x-ms-lease-status", "unlocked")
+		w.Header().Set("x-ms-lease-state", "available")
+		w.Header().Set("x-ms-blob-type", "BlockBlob")
+		w.Header().Set("x-ms-server-encrypted", "true")
+		w.Header().Set("Date", time.Now().UTC().Format(http.TimeFormat))
+		http.ServeContent(w, r, kind.Filename(), file.ModTime, f)
+
+	default:
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func Cloudfiles(w http.ResponseWriter, r *http.Request) {
 	key := strings.Join(strings.Split(r.URL.Path, "/")[2:], "/")
+	if models.IsMatchReplayKey(key) {
+		handleMatchReplay(w, r, key)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	cloudfiles := models.G(r).Resources().CloudFiles()
+	if cloudfiles.Credentials == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 	info, exists := (*cloudfiles.Credentials).Get(r.URL.Query().Get("sig"))
 
 	if !exists {

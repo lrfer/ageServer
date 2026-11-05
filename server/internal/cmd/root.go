@@ -143,6 +143,9 @@ func runRoot(fs *pflag.FlagSet) (err error, exitCode int) {
 			if cf := g.CustomFiles(); cf != nil {
 				cf.Close()
 			}
+			if mr := g.MatchReplays(); mr != nil {
+				mr.Close()
+			}
 		}
 		_ = fileLockUnlockFn(lock)
 	}()
@@ -224,6 +227,14 @@ func runRoot(fs *pflag.FlagSet) (err error, exitCode int) {
 		logger.Fail("Invalid BattleServerReplays configuration: %s", err)
 		exitCode = internal.ErrBattleServerReplays
 		return
+	}
+	if err = applyMatchReplaysConfig(cfg); err != nil {
+		logger.Fail("Invalid MatchReplays configuration: %s", err)
+		exitCode = internal.ErrMatchReplays
+		return
+	}
+	if internal.MatchReplaysEnabled {
+		logger.Info("Match replays are kept on this server's disk (AoE IV: AE), never uploaded elsewhere.")
 	}
 	var servers []*http.Server
 	internal.InitializeStopSignal()
@@ -521,6 +532,11 @@ func initConfig(fs *pflag.FlagSet) (*internal.Configuration, string) {
 		"BattleServerReplays.MaxFileSize":  "32MB",
 		"BattleServerReplays.MaxTotalSize": "256MB",
 		"BattleServerReplays.Expiry":       "12h",
+		"MatchReplays.Enabled":             false,
+		"MatchReplays.Folder":              "auto",
+		"MatchReplays.MaxFileSize":         "64MB",
+		"MatchReplays.MaxTotalSize":        "2GB",
+		"MatchReplays.Expiry":              "0",
 	}
 	for g := range game.SupportedGames.Iter() {
 		defaults[fmt.Sprintf("Games.%s.Hosts", g)] = []string{netip.IPv4Unspecified().String()}
@@ -537,6 +553,7 @@ func initConfig(fs *pflag.FlagSet) (*internal.Configuration, string) {
 		"announceMulticastGroup": "Announcement.MulticastGroup",
 		"announcePort":           "Announcement.Port",
 		cmd.GamesIdentifier:      "Games.Enabled",
+		"saveReplays":            "MatchReplays.Enabled",
 	}
 	var fileCandidates []string
 	if values.CfgFile != "" {
@@ -631,6 +648,45 @@ func parseByteSize(value string) (int64, error) {
 		}
 	}
 	return strconv.ParseInt(value, 10, 64)
+}
+
+// applyMatchReplaysConfig validates the MatchReplays section and publishes the
+// resolved values in the internal runtime globals. Expiry 0 keeps replays until
+// MaxTotalSize evicts the oldest.
+func applyMatchReplaysConfig(cfg *internal.Configuration) error {
+	internal.MatchReplaysEnabled = cfg.MatchReplays.Enabled
+	internal.MatchReplaysFolder = cfg.MatchReplays.Folder
+	if !cfg.MatchReplays.Enabled {
+		return nil
+	}
+	maxFileSize, err := parseByteSize(cfg.MatchReplays.MaxFileSize)
+	if err != nil {
+		return fmt.Errorf("MaxFileSize: %w", err)
+	}
+	maxTotalSize, err := parseByteSize(cfg.MatchReplays.MaxTotalSize)
+	if err != nil {
+		return fmt.Errorf("MaxTotalSize: %w", err)
+	}
+	if maxFileSize <= 0 {
+		return fmt.Errorf("MaxFileSize must be greater than zero")
+	}
+	if maxTotalSize <= 0 {
+		return fmt.Errorf("MaxTotalSize must be greater than zero")
+	}
+	if maxFileSize > maxTotalSize {
+		return fmt.Errorf("MaxFileSize (%d) must not exceed MaxTotalSize (%d)", maxFileSize, maxTotalSize)
+	}
+	expiry, err := time.ParseDuration(strings.TrimSpace(cfg.MatchReplays.Expiry))
+	if err != nil {
+		return fmt.Errorf("Expiry: %w", err)
+	}
+	if expiry < 0 {
+		return fmt.Errorf("Expiry must not be negative (use 0 to keep replays)")
+	}
+	internal.MatchReplaysMaxFileSize = maxFileSize
+	internal.MatchReplaysMaxTotalSize = maxTotalSize
+	internal.MatchReplaysExpiry = expiry
+	return nil
 }
 
 // applyBattleServerReplaysConfig validates the BattleServerReplays section and publishes

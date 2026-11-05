@@ -156,6 +156,10 @@ func SessionOrPanic(r *http.Request) Session {
 	return sessAny
 }
 
+func SessionFromRequest(r *http.Request) (Session, bool) {
+	return session(r)
+}
+
 func session(r *http.Request) (Session, bool) {
 	sess, ok := r.Context().Value("session").(Session)
 	return sess, ok

@@ -123,6 +123,24 @@ rescanned on every request (only new or changed files are hashed), so files can 
 while the server runs. Every mod starts subscribed for every player; unsubscribing is kept in memory only.
 Publishing from the game is not supported.
 
+### Match replays (AoE IV: AE only)
+
+With `[MatchReplays] Enabled = true` (or the `--saveReplays` flag), the replay and stats blobs the game uploads after
+a match are stored on **this server's disk** (by default `resources/userData/age4/match-replays`) and offered back in
+the match history. Nothing goes to the official (Microsoft) storage: `reportMatch` tells the game to upload to the
+same game API host it already talks to, which the hosts redirection points to this server. Without the option the
+game is not asked to upload anything.
+
+- Uploads are only offered to a player of a lobby hosted on this server, after the final result, for that match's
+  two blobs; the first complete upload of each blob is kept.
+- Every upload and download needs a token issued by the server (`sig` in the URL): upload tokens (30 min) only from
+  `reportMatch`/`getTempUploadCredentials`, read-only tokens (15 min) from `getTempCredentials`.
+- `MaxFileSize`, `MaxTotalSize` (oldest replays deleted first) and `Expiry` (`0` = keep) bound the disk use. The
+  folder is indexed again at startup, so replays survive restarts.
+- Block uploads (`comp=block`) are not emulated and are answered with `501`.
+
+Independent of `[BattleServerReplays]`, which records the embedded battle server traffic.
+
 ### Cloud
 
 The game connects to a static cloud to download assets. The server is configured to replace the original calls to

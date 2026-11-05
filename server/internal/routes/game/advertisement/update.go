@@ -152,6 +152,24 @@ func Update(w http.ResponseWriter, r *http.Request) {
 		updateReturnError(gameTitle, &w)
 		return
 	}
+	if history := g.MatchHistory(); history != nil && q.Id > 0 && q.Description != "PARTY" {
+		history.RecordPendingMatch(models.MatchResult{
+			MatchID:        int64(q.Id),
+			MapName:        q.MapName,
+			MaxPlayers:     int32(q.MaxPlayers),
+			MatchTypeID:    int32(q.MatchType),
+			EncodedOptions: q.Options,
+			EncodedSlots:   q.SlotInfo,
+			Description:    q.Description,
+			ModName:        q.ModName,
+			ModVersion:     q.ModVersion,
+			ModDllFile:     q.ModDllFile,
+			ModDllCRC:      q.ModDllChecksum,
+			DataCRC:        q.DataChecksum,
+			AppBinaryCRC:   q.AppBinaryChecksum,
+			VersionFlags:   int32(q.VersionFlags),
+		})
+	}
 	if automatch {
 		logger.Printf(
 			"automatch2: host advertisement update adv=%d user=%d desc=%q map=%q max=%d matchtype=%d state=%d joinable=%t\n",

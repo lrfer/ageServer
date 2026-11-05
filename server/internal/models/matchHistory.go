@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -43,33 +44,49 @@ const (
 // derive from the client payload are filled in; everything else stays at its
 // zero value.
 type MatchResult struct {
-	MatchID       int64         `json:"matchId"`
-	MapID         int32         `json:"mapId"`
-	MapName       string        `json:"mapName"`
-	LeaderboardID int32         `json:"leaderboard"`
-	QueueType     string        `json:"queueType"`
-	Players       []int32       `json:"players"`
-	Teams         []int32       `json:"teams"`
-	Results       []int32       `json:"results"`
-	Races         []int32       `json:"races"`
-	XPGained      []int32       `json:"xpGained"`
-	WinnerTeam    int32         `json:"winnerTeam"`
-	StartedAt     time.Time     `json:"startedAt"`
-	FinishedAt    time.Time     `json:"finishedAt"`
-	Rated         bool          `json:"rated"`
-	PlayerStats   []MatchPlayer `json:"playerStats,omitempty"`
+	MatchID        int64         `json:"matchId"`
+	MapID          int32         `json:"mapId"`
+	MapName        string        `json:"mapName"`
+	MaxPlayers     int32         `json:"maxPlayers"`
+	MatchTypeID    int32         `json:"matchTypeId"`
+	EncodedOptions string        `json:"encodedOptions"`
+	EncodedSlots   string        `json:"encodedSlots"`
+	Description    string        `json:"description"`
+	ModName        string        `json:"modName"`
+	ModVersion     string        `json:"modVersion"`
+	ModDllFile     string        `json:"modDllFile"`
+	ModDllCRC      int32         `json:"modDllCrc"`
+	DataCRC        int32         `json:"dataCrc"`
+	AppBinaryCRC   int32         `json:"appBinaryCrc"`
+	VersionFlags   int32         `json:"versionFlags"`
+	LeaderboardID  int32         `json:"leaderboard"`
+	QueueType      string        `json:"queueType"`
+	Players        []int32       `json:"players"`
+	Teams          []int32       `json:"teams"`
+	Results        []int32       `json:"results"`
+	Races          []int32       `json:"races"`
+	XPGained       []int32       `json:"xpGained"`
+	Counters       []string      `json:"counters,omitempty"`
+	CustomUpdates  []string      `json:"customUpdates,omitempty"`
+	WinnerTeam     int32         `json:"winnerTeam"`
+	StartedAt      time.Time     `json:"startedAt"`
+	FinishedAt     time.Time     `json:"finishedAt"`
+	Rated          bool          `json:"rated"`
+	PlayerStats    []MatchPlayer `json:"playerStats,omitempty"`
 }
 
 // MatchPlayer is the per-profile part of a reported match.
 type MatchPlayer struct {
-	ProfileID    int32 `json:"profileId"`
-	TeamID       int32 `json:"teamId"`
-	Result       int32 `json:"result"`
-	RaceID       int32 `json:"raceId"`
-	XPGained     int32 `json:"xpGained"`
-	RatingBefore int32 `json:"ratingBefore"`
-	RatingAfter  int32 `json:"ratingAfter"`
-	RatingDelta  int32 `json:"ratingDelta"`
+	ProfileID     int32  `json:"profileId"`
+	TeamID        int32  `json:"teamId"`
+	Result        int32  `json:"result"`
+	RaceID        int32  `json:"raceId"`
+	XPGained      int32  `json:"xpGained"`
+	RatingBefore  int32  `json:"ratingBefore"`
+	RatingAfter   int32  `json:"ratingAfter"`
+	RatingDelta   int32  `json:"ratingDelta"`
+	Counters      string `json:"counters,omitempty"`
+	CustomUpdates string `json:"customUpdates,omitempty"`
 }
 
 // PlayerRating is a profile's standing on one ladder.
@@ -174,27 +191,41 @@ func (s *MatchHistoryStore) Close() error {
 func migrate(db *sql.DB) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS matches (
-			match_id       INTEGER PRIMARY KEY,
-			map_id         INTEGER NOT NULL DEFAULT 0,
-			map_name       TEXT    NOT NULL DEFAULT '',
-			leaderboard_id INTEGER NOT NULL DEFAULT 0,
-			queue_type     TEXT    NOT NULL DEFAULT '',
-			winner_team    INTEGER NOT NULL DEFAULT -1,
-			reported       INTEGER NOT NULL DEFAULT 0,
-			rated          INTEGER NOT NULL DEFAULT 0,
-			started_at     INTEGER NOT NULL DEFAULT 0,
-			finished_at    INTEGER NOT NULL DEFAULT 0
+			match_id        INTEGER PRIMARY KEY,
+			map_id          INTEGER NOT NULL DEFAULT 0,
+			map_name        TEXT    NOT NULL DEFAULT '',
+			max_players     INTEGER NOT NULL DEFAULT 0,
+			match_type_id   INTEGER NOT NULL DEFAULT 0,
+			encoded_options TEXT    NOT NULL DEFAULT '',
+			encoded_slots   TEXT    NOT NULL DEFAULT '',
+			description     TEXT    NOT NULL DEFAULT '',
+			mod_name        TEXT    NOT NULL DEFAULT 'INVALID',
+			mod_version     TEXT    NOT NULL DEFAULT 'INVALID',
+			mod_dll_file    TEXT    NOT NULL DEFAULT 'INVALID',
+			mod_dll_crc     INTEGER NOT NULL DEFAULT 0,
+			data_crc        INTEGER NOT NULL DEFAULT 0,
+			app_binary_crc  INTEGER NOT NULL DEFAULT 0,
+			version_flags   INTEGER NOT NULL DEFAULT 0,
+			leaderboard_id  INTEGER NOT NULL DEFAULT 0,
+			queue_type      TEXT    NOT NULL DEFAULT '',
+			winner_team     INTEGER NOT NULL DEFAULT -1,
+			reported        INTEGER NOT NULL DEFAULT 0,
+			rated           INTEGER NOT NULL DEFAULT 0,
+			started_at      INTEGER NOT NULL DEFAULT 0,
+			finished_at     INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE IF NOT EXISTS match_players (
-			match_id      INTEGER NOT NULL,
-			profile_id    INTEGER NOT NULL,
-			team_id       INTEGER NOT NULL DEFAULT 0,
-			result        INTEGER NOT NULL DEFAULT -1,
-			race_id       INTEGER NOT NULL DEFAULT 0,
-			xp_gained     INTEGER NOT NULL DEFAULT 0,
-			rating_before INTEGER NOT NULL DEFAULT 0,
-			rating_after  INTEGER NOT NULL DEFAULT 0,
-			rating_delta  INTEGER NOT NULL DEFAULT 0,
+			match_id       INTEGER NOT NULL,
+			profile_id     INTEGER NOT NULL,
+			team_id        INTEGER NOT NULL DEFAULT 0,
+			result         INTEGER NOT NULL DEFAULT -1,
+			race_id        INTEGER NOT NULL DEFAULT 0,
+			xp_gained      INTEGER NOT NULL DEFAULT 0,
+			rating_before  INTEGER NOT NULL DEFAULT 0,
+			rating_after   INTEGER NOT NULL DEFAULT 0,
+			rating_delta   INTEGER NOT NULL DEFAULT 0,
+			counters       TEXT    NOT NULL DEFAULT '{}',
+			custom_updates TEXT    NOT NULL DEFAULT '',
 			PRIMARY KEY (match_id, profile_id),
 			FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE
 		)`,
@@ -232,12 +263,66 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	// Upgrade databases created before the lobby metadata columns existed. Only
+	// the missing columns are added, so any other error is a real failure.
+	if err := addMissingColumns(db, "matches", [][2]string{
+		{"max_players", "INTEGER NOT NULL DEFAULT 0"},
+		{"match_type_id", "INTEGER NOT NULL DEFAULT 0"},
+		{"encoded_options", "TEXT NOT NULL DEFAULT ''"},
+		{"encoded_slots", "TEXT NOT NULL DEFAULT ''"},
+		{"description", "TEXT NOT NULL DEFAULT ''"},
+		{"mod_name", "TEXT NOT NULL DEFAULT 'INVALID'"},
+		{"mod_version", "TEXT NOT NULL DEFAULT 'INVALID'"},
+		{"mod_dll_file", "TEXT NOT NULL DEFAULT 'INVALID'"},
+		{"mod_dll_crc", "INTEGER NOT NULL DEFAULT 0"},
+		{"data_crc", "INTEGER NOT NULL DEFAULT 0"},
+		{"app_binary_crc", "INTEGER NOT NULL DEFAULT 0"},
+		{"version_flags", "INTEGER NOT NULL DEFAULT 0"},
+	}); err != nil {
+		return err
+	}
+	return addMissingColumns(db, "match_players", [][2]string{
+		{"counters", "TEXT NOT NULL DEFAULT '{}'"},
+		{"custom_updates", "TEXT NOT NULL DEFAULT ''"},
+	})
+}
+
+// addMissingColumns adds each (name, definition) column table lacks.
+func addMissingColumns(db *sql.DB, table string, columns [][2]string) error {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return err
+	}
+	existing := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err = rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		existing[strings.ToLower(name)] = true
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	for _, column := range columns {
+		if existing[strings.ToLower(column[0])] {
+			continue
+		}
+		if _, err = db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column[0] + ` ` + column[1]); err != nil {
+			return fmt.Errorf("add %s.%s: %w", table, column[0], err)
+		}
+	}
 	return nil
 }
 
-// RecordPendingMatch stores the pairing information as soon as the map has
-// been chosen, so the map/queue are still known when the clients report the
-// result after the matchmaking entry has already been dropped.
+// RecordPendingMatch stores the pairing or lobby information as soon as the
+// match is created or updated, so the map, options, slots, and version CRCs
+// are still known when the clients report the result after the lobby entry has
+// been dropped.
 func (s *MatchHistoryStore) RecordPendingMatch(m MatchResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -256,10 +341,35 @@ func (s *MatchHistoryStore) RecordPendingMatch(m MatchResult) {
 		started = time.Now()
 	}
 	if _, err = tx.Exec(
-		`INSERT INTO matches (match_id, map_id, map_name, leaderboard_id, queue_type, started_at)
-		 VALUES (?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(match_id) DO NOTHING`,
-		m.MatchID, m.MapID, m.MapName, m.LeaderboardID, m.QueueType, started.Unix(),
+		`INSERT INTO matches (
+			match_id, map_id, map_name, max_players, match_type_id,
+			encoded_options, encoded_slots, description,
+			mod_name, mod_version, mod_dll_file, mod_dll_crc,
+			data_crc, app_binary_crc, version_flags,
+			leaderboard_id, queue_type, started_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(match_id) DO UPDATE SET
+			map_id          = CASE WHEN excluded.map_id <> 0 THEN excluded.map_id ELSE matches.map_id END,
+			map_name        = CASE WHEN excluded.map_name <> '' THEN excluded.map_name ELSE matches.map_name END,
+			max_players     = CASE WHEN excluded.max_players <> 0 THEN excluded.max_players ELSE matches.max_players END,
+			match_type_id   = CASE WHEN excluded.match_type_id <> 0 THEN excluded.match_type_id ELSE matches.match_type_id END,
+			encoded_options = CASE WHEN excluded.encoded_options <> '' THEN excluded.encoded_options ELSE matches.encoded_options END,
+			encoded_slots   = CASE WHEN excluded.encoded_slots <> '' THEN excluded.encoded_slots ELSE matches.encoded_slots END,
+			description     = CASE WHEN excluded.description <> '' THEN excluded.description ELSE matches.description END,
+			mod_name        = CASE WHEN excluded.mod_name <> '' AND excluded.mod_name <> 'INVALID' THEN excluded.mod_name ELSE matches.mod_name END,
+			mod_version     = CASE WHEN excluded.mod_version <> '' AND excluded.mod_version <> 'INVALID' THEN excluded.mod_version ELSE matches.mod_version END,
+			mod_dll_file    = CASE WHEN excluded.mod_dll_file <> '' AND excluded.mod_dll_file <> 'INVALID' THEN excluded.mod_dll_file ELSE matches.mod_dll_file END,
+			mod_dll_crc     = CASE WHEN excluded.mod_dll_crc <> 0 THEN excluded.mod_dll_crc ELSE matches.mod_dll_crc END,
+			data_crc        = CASE WHEN excluded.data_crc <> 0 THEN excluded.data_crc ELSE matches.data_crc END,
+			app_binary_crc  = CASE WHEN excluded.app_binary_crc <> 0 THEN excluded.app_binary_crc ELSE matches.app_binary_crc END,
+			version_flags   = CASE WHEN excluded.version_flags <> 0 THEN excluded.version_flags ELSE matches.version_flags END,
+			leaderboard_id  = CASE WHEN excluded.leaderboard_id <> 0 THEN excluded.leaderboard_id ELSE matches.leaderboard_id END,
+			queue_type      = CASE WHEN excluded.queue_type <> '' THEN excluded.queue_type ELSE matches.queue_type END`,
+		m.MatchID, m.MapID, m.MapName, m.MaxPlayers, m.MatchTypeID,
+		m.EncodedOptions, m.EncodedSlots, m.Description,
+		defaultModStr(m.ModName), defaultModStr(m.ModVersion), defaultModStr(m.ModDllFile), m.ModDllCRC,
+		m.DataCRC, m.AppBinaryCRC, m.VersionFlags,
+		m.LeaderboardID, m.QueueType, started.Unix(),
 	); err != nil {
 		logger.Printf("matchHistory: pending match %d: %s\n", m.MatchID, err)
 		return
@@ -285,6 +395,44 @@ func (s *MatchHistoryStore) RecordPendingMatch(m MatchResult) {
 	if err = tx.Commit(); err != nil {
 		logger.Printf("matchHistory: pending match %d commit: %s\n", m.MatchID, err)
 	}
+}
+
+func defaultModStr(s string) string {
+	if s == "" {
+		return "INVALID"
+	}
+	return s
+}
+
+// MatchExists reports whether the match is stored, whether only pending (a
+// lobby hosted here) or already reported.
+func (s *MatchHistoryStore) MatchExists(matchID int64) bool {
+	if matchID == 0 {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.db == nil {
+		return false
+	}
+	var one int
+	return s.db.QueryRow(`SELECT 1 FROM matches WHERE match_id = ?`, matchID).Scan(&one) == nil
+}
+
+// IsMatchPlayer reports whether profileID is among the reported players.
+func (s *MatchHistoryStore) IsMatchPlayer(matchID int64, profileID int32) bool {
+	if matchID == 0 {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.db == nil {
+		return false
+	}
+	var one int
+	return s.db.QueryRow(
+		`SELECT 1 FROM match_players WHERE match_id = ? AND profile_id = ?`, matchID, profileID,
+	).Scan(&one) == nil
 }
 
 // ApplyResult stores a reported result and, the first time it is seen, moves
@@ -329,20 +477,52 @@ func (s *MatchHistoryStore) ApplyResult(m MatchResult) (map[int32]*PlayerRating,
 	if finished.IsZero() {
 		finished = time.Now()
 	}
+	started := m.StartedAt
+	// knownStart is 0 when the report carries no start time, so an existing row
+	// keeps the one it already has.
+	var knownStart int64
+	if started.IsZero() {
+		started = finished
+	} else {
+		knownStart = started.Unix()
+	}
 	if _, err = tx.Exec(
-		`INSERT INTO matches (match_id, map_id, map_name, leaderboard_id, queue_type, winner_team,
-		                      reported, rated, started_at, finished_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+		`INSERT INTO matches (
+			match_id, map_id, map_name, max_players, match_type_id,
+			encoded_options, encoded_slots, description,
+			mod_name, mod_version, mod_dll_file, mod_dll_crc,
+			data_crc, app_binary_crc, version_flags,
+			leaderboard_id, queue_type, winner_team,
+			reported, rated, started_at, finished_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
 		 ON CONFLICT(match_id) DO UPDATE SET
-		   map_id         = CASE WHEN excluded.map_id <> 0 THEN excluded.map_id ELSE matches.map_id END,
-		   map_name       = CASE WHEN excluded.map_name <> '' THEN excluded.map_name ELSE matches.map_name END,
-		   leaderboard_id = CASE WHEN excluded.leaderboard_id <> 0 THEN excluded.leaderboard_id ELSE matches.leaderboard_id END,
-		   queue_type     = CASE WHEN excluded.queue_type <> '' THEN excluded.queue_type ELSE matches.queue_type END,
-		   winner_team    = CASE WHEN excluded.winner_team >= 0 THEN excluded.winner_team ELSE matches.winner_team END,
-		   reported       = 1,
-		   finished_at    = CASE WHEN excluded.finished_at <> 0 THEN excluded.finished_at ELSE matches.finished_at END`,
-		m.MatchID, m.MapID, m.MapName, leaderboard, m.QueueType, winner,
-		finished.Unix(), finished.Unix(),
+		   map_id          = CASE WHEN excluded.map_id <> 0 THEN excluded.map_id ELSE matches.map_id END,
+		   map_name        = CASE WHEN excluded.map_name <> '' THEN excluded.map_name ELSE matches.map_name END,
+		   max_players     = CASE WHEN excluded.max_players <> 0 THEN excluded.max_players ELSE matches.max_players END,
+		   match_type_id   = CASE WHEN excluded.match_type_id <> 0 THEN excluded.match_type_id ELSE matches.match_type_id END,
+		   encoded_options = CASE WHEN excluded.encoded_options <> '' THEN excluded.encoded_options ELSE matches.encoded_options END,
+		   encoded_slots   = CASE WHEN excluded.encoded_slots <> '' THEN excluded.encoded_slots ELSE matches.encoded_slots END,
+		   description     = CASE WHEN excluded.description <> '' THEN excluded.description ELSE matches.description END,
+		   mod_name        = CASE WHEN excluded.mod_name <> '' AND excluded.mod_name <> 'INVALID' THEN excluded.mod_name ELSE matches.mod_name END,
+		   mod_version     = CASE WHEN excluded.mod_version <> '' AND excluded.mod_version <> 'INVALID' THEN excluded.mod_version ELSE matches.mod_version END,
+		   mod_dll_file    = CASE WHEN excluded.mod_dll_file <> '' AND excluded.mod_dll_file <> 'INVALID' THEN excluded.mod_dll_file ELSE matches.mod_dll_file END,
+		   mod_dll_crc     = CASE WHEN excluded.mod_dll_crc <> 0 THEN excluded.mod_dll_crc ELSE matches.mod_dll_crc END,
+		   data_crc        = CASE WHEN excluded.data_crc <> 0 THEN excluded.data_crc ELSE matches.data_crc END,
+		   app_binary_crc  = CASE WHEN excluded.app_binary_crc <> 0 THEN excluded.app_binary_crc ELSE matches.app_binary_crc END,
+		   version_flags   = CASE WHEN excluded.version_flags <> 0 THEN excluded.version_flags ELSE matches.version_flags END,
+		   leaderboard_id  = CASE WHEN excluded.leaderboard_id <> 0 THEN excluded.leaderboard_id ELSE matches.leaderboard_id END,
+		   queue_type      = CASE WHEN excluded.queue_type <> '' THEN excluded.queue_type ELSE matches.queue_type END,
+		   winner_team     = CASE WHEN excluded.winner_team >= 0 THEN excluded.winner_team ELSE matches.winner_team END,
+		   reported        = 1,
+		   finished_at     = CASE WHEN excluded.finished_at <> 0 THEN excluded.finished_at ELSE matches.finished_at END,
+		   started_at      = CASE WHEN ? <> 0 THEN ? ELSE matches.started_at END`,
+		m.MatchID, m.MapID, m.MapName, m.MaxPlayers, m.MatchTypeID,
+		m.EncodedOptions, m.EncodedSlots, m.Description,
+		defaultModStr(m.ModName), defaultModStr(m.ModVersion), defaultModStr(m.ModDllFile), m.ModDllCRC,
+		m.DataCRC, m.AppBinaryCRC, m.VersionFlags,
+		leaderboard, m.QueueType, winner,
+		started.Unix(), finished.Unix(),
+		knownStart, knownStart,
 	); err != nil {
 		logger.Printf("matchHistory: store %d: %s\n", m.MatchID, err)
 		return map[int32]*PlayerRating{}, false
@@ -350,6 +530,7 @@ func (s *MatchHistoryStore) ApplyResult(m MatchResult) (map[int32]*PlayerRating,
 
 	for i, profile := range m.Players {
 		team, result, race, xp := int32(0), int32(-1), int32(0), int32(0)
+		counters, customUpdates := "{}", ""
 		if i < len(m.Teams) {
 			team = m.Teams[i]
 		}
@@ -362,15 +543,23 @@ func (s *MatchHistoryStore) ApplyResult(m MatchResult) (map[int32]*PlayerRating,
 		if i < len(m.XPGained) {
 			xp = m.XPGained[i]
 		}
+		if i < len(m.Counters) && m.Counters[i] != "" {
+			counters = m.Counters[i]
+		}
+		if i < len(m.CustomUpdates) && m.CustomUpdates[i] != "" {
+			customUpdates = m.CustomUpdates[i]
+		}
 		if _, err = tx.Exec(
-			`INSERT INTO match_players (match_id, profile_id, team_id, result, race_id, xp_gained)
-			 VALUES (?, ?, ?, ?, ?, ?)
+			`INSERT INTO match_players (match_id, profile_id, team_id, result, race_id, xp_gained, counters, custom_updates)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(match_id, profile_id) DO UPDATE SET
-			   team_id   = excluded.team_id,
-			   result    = excluded.result,
-			   race_id   = excluded.race_id,
-			   xp_gained = excluded.xp_gained`,
-			m.MatchID, profile, team, result, race, xp,
+			   team_id        = excluded.team_id,
+			   result         = excluded.result,
+			   race_id        = excluded.race_id,
+			   xp_gained      = excluded.xp_gained,
+			   counters       = CASE WHEN excluded.counters <> '' AND excluded.counters <> '{}' THEN excluded.counters ELSE match_players.counters END,
+			   custom_updates = CASE WHEN excluded.custom_updates <> '' THEN excluded.custom_updates ELSE match_players.custom_updates END`,
+			m.MatchID, profile, team, result, race, xp, counters, customUpdates,
 		); err != nil {
 			logger.Printf("matchHistory: player %d/%d: %s\n", m.MatchID, profile, err)
 			return map[int32]*PlayerRating{}, false
@@ -662,8 +851,12 @@ func (s *MatchHistoryStore) GetRecentForProfiles(profiles []int32, limit int) []
 	if s.db == nil {
 		return nil
 	}
-	query := `SELECT DISTINCT m.match_id, m.map_id, m.map_name, m.leaderboard_id, m.queue_type,
-	                 m.winner_team, m.started_at, m.finished_at
+	query := `SELECT DISTINCT m.match_id, m.map_id, m.map_name, m.max_players, m.match_type_id,
+	                 m.encoded_options, m.encoded_slots, m.description,
+	                 m.mod_name, m.mod_version, m.mod_dll_file, m.mod_dll_crc,
+	                 m.data_crc, m.app_binary_crc, m.version_flags,
+	                 m.leaderboard_id, m.queue_type, m.winner_team, m.rated,
+	                 m.started_at, m.finished_at
 	          FROM matches m
 	          JOIN match_players p ON p.match_id = m.match_id
 	          WHERE m.reported = 1
@@ -698,13 +891,21 @@ func (s *MatchHistoryStore) GetRecentForProfile(profileID int32, limit int) []Ma
 func scanMatch(rows *sql.Rows) (MatchResult, error) {
 	var (
 		m                     MatchResult
+		rated                 int
 		startedAt, finishedAt int64
 	)
-	err := rows.Scan(&m.MatchID, &m.MapID, &m.MapName, &m.LeaderboardID, &m.QueueType,
-		&m.WinnerTeam, &startedAt, &finishedAt)
+	err := rows.Scan(
+		&m.MatchID, &m.MapID, &m.MapName, &m.MaxPlayers, &m.MatchTypeID,
+		&m.EncodedOptions, &m.EncodedSlots, &m.Description,
+		&m.ModName, &m.ModVersion, &m.ModDllFile, &m.ModDllCRC,
+		&m.DataCRC, &m.AppBinaryCRC, &m.VersionFlags,
+		&m.LeaderboardID, &m.QueueType, &m.WinnerTeam, &rated,
+		&startedAt, &finishedAt,
+	)
 	if err != nil {
 		return m, err
 	}
+	m.Rated = rated != 0
 	m.StartedAt = time.Unix(startedAt, 0)
 	m.FinishedAt = time.Unix(finishedAt, 0)
 	return m, nil
@@ -712,7 +913,7 @@ func scanMatch(rows *sql.Rows) (MatchResult, error) {
 
 func (s *MatchHistoryStore) loadPlayersLocked(m MatchResult) MatchResult {
 	rows, err := s.db.Query(
-		`SELECT profile_id, team_id, result, race_id, xp_gained, rating_before, rating_after, rating_delta
+		`SELECT profile_id, team_id, result, race_id, xp_gained, rating_before, rating_after, rating_delta, counters, custom_updates
 		 FROM match_players WHERE match_id = ? ORDER BY team_id, profile_id`, m.MatchID,
 	)
 	if err != nil {
@@ -722,7 +923,7 @@ func (s *MatchHistoryStore) loadPlayersLocked(m MatchResult) MatchResult {
 	for rows.Next() {
 		var p MatchPlayer
 		if err = rows.Scan(&p.ProfileID, &p.TeamID, &p.Result, &p.RaceID, &p.XPGained,
-			&p.RatingBefore, &p.RatingAfter, &p.RatingDelta); err != nil {
+			&p.RatingBefore, &p.RatingAfter, &p.RatingDelta, &p.Counters, &p.CustomUpdates); err != nil {
 			continue
 		}
 		m.Players = append(m.Players, p.ProfileID)
@@ -730,6 +931,8 @@ func (s *MatchHistoryStore) loadPlayersLocked(m MatchResult) MatchResult {
 		m.Results = append(m.Results, p.Result)
 		m.Races = append(m.Races, p.RaceID)
 		m.XPGained = append(m.XPGained, p.XPGained)
+		m.Counters = append(m.Counters, p.Counters)
+		m.CustomUpdates = append(m.CustomUpdates, p.CustomUpdates)
 		m.PlayerStats = append(m.PlayerStats, p)
 	}
 	return m

@@ -292,6 +292,24 @@ func Host(w http.ResponseWriter, r *http.Request) {
 	}
 
 	i.JSON(&w, response)
+	if history := g.MatchHistory(); history != nil && storedAdv.GetId() > 0 && adv.Description != "PARTY" {
+		history.RecordPendingMatch(models.MatchResult{
+			MatchID:        int64(storedAdv.GetId()),
+			MapName:        adv.MapName,
+			MaxPlayers:     int32(adv.MaxPlayers),
+			MatchTypeID:    int32(adv.MatchType),
+			EncodedOptions: adv.Options,
+			EncodedSlots:   adv.SlotInfo,
+			Description:    adv.Description,
+			ModName:        adv.ModName,
+			ModVersion:     adv.ModVersion,
+			ModDllFile:     adv.ModDllFile,
+			ModDllCRC:      adv.ModDllChecksum,
+			DataCRC:        adv.DataChecksum,
+			AppBinaryCRC:   adv.AppBinaryChecksum,
+			VersionFlags:   int32(adv.VersionFlags),
+		})
+	}
 	if automatch {
 		wss.SendMatchNotifications(g.Matchmaking().HostCreated(adv.AutomatchPollId, storedAdv.GetId(), u.GetId()))
 	}

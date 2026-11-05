@@ -18,6 +18,7 @@ type Game interface {
 	ChatChannels() ChatChannels
 	Sessions() Sessions
 	CustomFiles() CustomFiles
+	MatchReplays() MatchReplays
 	Matchmaking() Matchmaking
 	MatchHistory() MatchHistory
 }
@@ -46,6 +47,10 @@ type MatchHistory interface {
 	// ApplyResult stores a reported result and returns the updated ratings and
 	// whether this call moved them.
 	ApplyResult(m MatchResult) (map[int32]*PlayerRating, bool)
+	// MatchExists reports whether the match is known, pending or reported.
+	MatchExists(matchID int64) bool
+	// IsMatchPlayer reports whether profileID took part in a reported match.
+	IsMatchPlayer(matchID int64, profileID int32) bool
 }
 
 func G(r *http.Request) Game {
@@ -68,6 +73,7 @@ type MainGame struct {
 	items                  Items
 	presenceDefinitions    PresenceDefinitions
 	customFiles            CustomFiles
+	matchReplays           MatchReplays
 	matchHistory           MatchHistory
 	title                  string
 }
@@ -91,6 +97,8 @@ type InstanceOpts struct {
 	Items                  Items
 	CustomFiles            CustomFiles
 	CustomFilesOpts        *CustomFilesOpts
+	MatchReplays           MatchReplays
+	MatchReplaysOpts       *MatchReplaysOpts
 }
 
 func CreateMainGame(gameId string, opts *CreateMainGameOpts) Game {
@@ -124,6 +132,9 @@ func CreateMainGame(gameId string, opts *CreateMainGameOpts) Game {
 	if opts.Instances.CustomFiles == nil {
 		opts.Instances.CustomFiles = &MainCustomFiles{}
 	}
+	if opts.Instances.MatchReplays == nil {
+		opts.Instances.MatchReplays = &MainMatchReplays{}
+	}
 	if opts.Instances.Matchmaking == nil {
 		opts.Instances.Matchmaking = &MainMatchmaking{}
 	}
@@ -135,6 +146,7 @@ func CreateMainGame(gameId string, opts *CreateMainGameOpts) Game {
 		chatChannels:   opts.Instances.ChatChannels,
 		sessions:       opts.Instances.Sessions,
 		customFiles:    opts.Instances.CustomFiles,
+		matchReplays:   opts.Instances.MatchReplays,
 		matchmaking:    opts.Instances.Matchmaking,
 		title:          gameId,
 	}
@@ -153,6 +165,17 @@ func CreateMainGame(gameId string, opts *CreateMainGameOpts) Game {
 	game.chatChannels.Initialize(game.resources.ChatChannels())
 	game.sessions.Initialize()
 	game.customFiles.Initialize(gameId, opts.Instances.CustomFilesOpts)
+	matchReplaysOpts := opts.Instances.MatchReplaysOpts
+	if matchReplaysOpts == nil {
+		matchReplaysOpts = DefaultMatchReplaysOpts()
+	}
+	if gameId != "age4" {
+		// Only AoE IV keeps its replays server side; the others save them locally.
+		disabled := *matchReplaysOpts
+		disabled.Enabled = false
+		matchReplaysOpts = &disabled
+	}
+	game.matchReplays.Initialize(gameId, matchReplaysOpts)
 	game.matchHistory = NewMatchHistoryStoreForGame(gameId)
 	if mainUsers, ok := game.users.(*MainUsers); ok && mainUsers != nil {
 		history := game.matchHistory
@@ -276,6 +299,10 @@ func (g *MainGame) PresenceDefinitions() PresenceDefinitions {
 
 func (g *MainGame) CustomFiles() CustomFiles {
 	return g.customFiles
+}
+
+func (g *MainGame) MatchReplays() MatchReplays {
+	return g.matchReplays
 }
 
 // getChallengeFormat returns the JSON format used by a game's challenges.json.

@@ -32,9 +32,15 @@ func GetRecentMatchHistory(w http.ResponseWriter, r *http.Request) {
 		logger.Printf("leaderboard.getRecentMatchHistory: could not bind query: %s\n", err)
 	}
 	requested := normalizeProfileIDs(req.ProfileIDs.Data)
+	if len(requested) == 0 {
+		if sess, ok := models.SessionFromRequest(r); ok && sess != nil && sess.GetUserId() > 0 {
+			requested = []int32{sess.GetUserId()}
+		}
+	}
 
 	game := models.G(r)
 	store := game.MatchHistory()
+	replays := game.MatchReplays()
 	users := game.Users()
 	matches := store.GetRecentForProfiles(requested, 30)
 
@@ -50,15 +56,23 @@ func GetRecentMatchHistory(w http.ResponseWriter, r *http.Request) {
 		reportResults := make(i.A, 0, len(match.PlayerStats))
 		memberStats := make(i.A, 0, len(match.PlayerStats))
 		for _, player := range match.PlayerStats {
+			counters := player.Counters
+			if counters == "" {
+				counters = "{}"
+			}
+			customUpdates := player.CustomUpdates
+			if customUpdates == "" {
+				customUpdates = `{"itemUpdates":[],"challengeUpdates":[],"clientUpdates":{}}`
+			}
 			reportResults = append(reportResults, i.A{
-				match.MatchID,    // matchHistoryID
-				player.ProfileID, // profileID
-				player.Result,    // resultType (1 = win)
-				player.TeamID,    // teamID
-				player.RaceID,    // raceID
-				player.XPGained,  // xpGained
-				"{}",             // counters
-				`{"itemUpdates":[],"challengeUpdates":[],"clientUpdates":{}}`, // customUpdates
+				match.MatchID,          // matchHistoryID
+				player.ProfileID,       // profileID
+				player.Result,          // resultType (1 = win)
+				player.TeamID,          // teamID
+				player.RaceID,          // raceID
+				player.XPGained,        // xpGained
+				counters,               // counters
+				customUpdates,          // customUpdates
 				match.StartedAt.Unix(), // matchStartDate
 			})
 
@@ -98,29 +112,57 @@ func GetRecentMatchHistory(w http.ResponseWriter, r *http.Request) {
 		if len(match.PlayerStats) > 0 {
 			creator = match.PlayerStats[0].ProfileID
 		}
-		matchTypeID := 0
-		description := match.MapName
+		maxPlayers := int(match.MaxPlayers)
+		if maxPlayers <= 0 {
+			maxPlayers = len(match.PlayerStats)
+		}
+		matchTypeID := int(match.MatchTypeID)
+		description := match.Description
+		if description == "" {
+			description = match.MapName
+		}
 		if match.QueueType != "" || match.Rated {
 			// 26 is the 1v1 ranked automatch type used by the official service.
 			matchTypeID = 26
 			description = "AUTOMATCH"
 		}
+		modName := match.ModName
+		if modName == "" {
+			modName = "INVALID"
+		}
+		modVersion := match.ModVersion
+		if modVersion == "" {
+			modVersion = "INVALID"
+		}
+		modDllFile := match.ModDllFile
+		if modDllFile == "" {
+			modDllFile = "INVALID"
+		}
+		// Only replays still stored on this server are offered.
+		matchUrls := make(i.A, 0, 2)
+		if replays != nil && replays.Enabled() {
+			for _, kind := range models.ReplayKinds {
+				if file, ok := replays.Stat(match.MatchID, kind); ok {
+					matchUrls = append(matchUrls, i.A{creator, "/cloudfiles/" + models.MatchReplayKey(match.MatchID, kind), file.Length, int(kind)})
+				}
+			}
+		}
 		history = append(history, i.A{
 			match.MatchID,           // matchHistoryID
 			creator,                 // creatorProfileID
 			match.MapName,           // mapName
-			len(match.PlayerStats),  // maxPlayers
+			maxPlayers,              // maxPlayers
 			matchTypeID,             // matchTypeID
-			"",                      // encodedOptions
-			"",                      // encodedSlots
+			match.EncodedOptions,    // encodedOptions
+			match.EncodedSlots,      // encodedSlots
 			description,             // description
 			match.StartedAt.Unix(),  // startGameTime
 			match.FinishedAt.Unix(), // completionTime
 			0,                       // observerTotal
 			reportResults,           // matchHistoryReportResults
 			i.A{},                   // matchHistoryItems
-			i.A{},                   // matchUrls
-			i.A{"INVALID", "INVALID", "INVALID", 0, 0, 0, 0}, // matchVersionInfo
+			matchUrls,               // matchUrls
+			i.A{modName, modVersion, modDllFile, match.ModDllCRC, match.DataCRC, match.AppBinaryCRC, match.VersionFlags}, // matchVersionInfo
 			memberStats, // matchHistoryMemberStats
 		})
 	}

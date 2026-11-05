@@ -295,6 +295,11 @@ func (g *Game) InitializeRoutes(gameId string, _ http.Handler) http.Handler {
 	}
 
 	cloudGroup.HandleFunc("GET", "/getTempCredentials", cloud.GetTempCredentials)
+	if gameId == game.AoE4 {
+		// Match replays are kept on this server (see models.MatchReplays).
+		cloudGroup.HandleFunc("GET", "/getTempUploadCredentials", cloud.GetTempUploadCredentials)
+		cloudGroup.HandleFunc("POST", "/getTempUploadCredentials", cloud.GetTempUploadCredentials)
+	}
 
 	msstoreGroup := gameGroup.Subgroup("/msstore")
 	msstoreGroup.HandleFunc("GET", "/getStoreTokens", msstore.GetStoreTokens)
@@ -303,8 +308,12 @@ func (g *Game) InitializeRoutes(gameId string, _ http.Handler) http.Handler {
 
 	// Artificial path needed for cloudGroup
 	// TODO: Enable to AoM if/when it gets cloud support
-	if gameId == game.AoE2 || gameId == game.AoE3 {
+	if gameId == game.AoE2 || gameId == game.AoE3 || gameId == game.AoE4 {
 		g.group.HandleFunc("GET", "/cloudfiles/", cloudfiles.Cloudfiles)
+	}
+	if gameId == game.AoE4 {
+		// Match replay uploads, stored on this server's disk.
+		g.group.HandleFunc("PUT", "/cloudfiles/replays/", cloudfiles.Cloudfiles)
 	}
 
 	// Custom files (savegames/replays). Registered here and in

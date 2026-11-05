@@ -80,6 +80,17 @@ type BattleServerReplays struct {
 	Expiry       string
 }
 
+// MatchReplays configures keeping the replays AoE IV uploads after a match on
+// this server's disk (never anywhere else), so they can be downloaded later from
+// the match history. Sizes and the TTL are validated once at startup.
+type MatchReplays struct {
+	Enabled      bool
+	Folder       string
+	MaxFileSize  string
+	MaxTotalSize string
+	Expiry       string
+}
+
 type SignConfig struct {
 	// Enabled makes the server re-sign the catalogues it serves instead of
 	// replaying the signatures captured alongside them in resources/responses.
@@ -101,6 +112,7 @@ type Configuration struct {
 	Games                  Games
 	CustomFiles            CustomFiles
 	BattleServerReplays    BattleServerReplays
+	MatchReplays           MatchReplays
 	Sign                   SignConfig
 }
 

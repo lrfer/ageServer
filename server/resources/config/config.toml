@@ -153,3 +153,27 @@ MaxTotalSize = '256MB'
 # (e.g. 12h, 30m, 1h30m). Files are also purged at startup if older than this.
 # Set to 0 or a negative value (e.g. -1) to keep replay files forever.
 Expiry = '12h'
+
+# CONFIGURING MATCH REPLAYS (AoE IV: AE only)
+# When enabled, the replay the game uploads after a match is stored on THIS server's
+# disk, and the match history offers it for download. Nothing is sent to the official
+# (Microsoft) storage: the game is told to upload here. Independent of
+# [BattleServerReplays]. Also enabled with the --saveReplays flag.
+[MatchReplays]
+# Whether to keep match replays. When disabled, the game is not asked to upload them.
+Enabled = false
+
+# Folder where the replays are stored. If 'auto', uses the userData folder:
+# <resources>/userData/<game>/match-replays (e.g., resources/userData/age4/match-replays).
+Folder = 'auto'
+
+# Maximum size of a single replay. Accepts B/KB/MB/GB suffixes.
+MaxFileSize = '64MB'
+
+# Maximum accumulated size per game. When exceeded, the oldest replays are
+# deleted first.
+MaxTotalSize = '2GB'
+
+# How long a replay is kept. Accepts Go durations (e.g. 720h for 30 days).
+# Set to 0 to keep replays until MaxTotalSize forces the oldest out.
+Expiry = '0'

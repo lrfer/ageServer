@@ -44,4 +44,12 @@ var BattleServerReplaysMaxFileSize int64
 var BattleServerReplaysMaxTotalSize int64
 var BattleServerReplaysExpiry time.Duration
 
+// MatchReplays holds the resolved local match replay configuration. Set once at
+// startup. A zero MatchReplaysExpiry keeps replays until the size limit evicts them.
+var MatchReplaysEnabled bool
+var MatchReplaysFolder string
+var MatchReplaysMaxFileSize int64
+var MatchReplaysMaxTotalSize int64
+var MatchReplaysExpiry time.Duration
+
 type AnnounceMessageDataLatest = common.AnnounceMessageData002
